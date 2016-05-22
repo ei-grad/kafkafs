@@ -5,21 +5,25 @@ import logging
 
 from errno import EACCES
 from os.path import realpath
-from sys import argv, exit
-from threading import Lock
+from threading import Thread
 
 import os
+
+import click
 
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
 
 
-class Loopback(LoggingMixIn, Operations):
+class Slave():
+    pass
+
+
+class Master(LoggingMixIn, Operations):
     def __init__(self, root):
         self.root = realpath(root)
-        self.rwlock = Lock()
 
     def __call__(self, op, path, *args):
-        return super(Loopback, self).__call__(op, self.root + path, *args)
+        return super(Master, self).__call__(op, self.root + path, *args)
 
     def access(self, path, mode):
         if not os.access(path, mode):
@@ -36,14 +40,16 @@ class Loopback(LoggingMixIn, Operations):
 
     def fsync(self, path, datasync, fh):
         if datasync != 0:
-          return os.fdatasync(fh)
+            return os.fdatasync(fh)
         else:
-          return os.fsync(fh)
+            return os.fsync(fh)
 
     def getattr(self, path, fh=None):
         st = os.lstat(path)
-        return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
-            'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
+        return dict((key, getattr(st, key)) for key in (
+            'st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime',
+            'st_nlink', 'st_size', 'st_uid'
+        ))
 
     getxattr = None
 
@@ -75,9 +81,10 @@ class Loopback(LoggingMixIn, Operations):
 
     def statfs(self, path):
         stv = os.statvfs(path)
-        return dict((key, getattr(stv, key)) for key in ('f_bavail', 'f_bfree',
-            'f_blocks', 'f_bsize', 'f_favail', 'f_ffree', 'f_files', 'f_flag',
-            'f_frsize', 'f_namemax'))
+        return dict((key, getattr(stv, key)) for key in (
+            'f_bavail', 'f_bfree', 'f_blocks', 'f_bsize', 'f_favail',
+            'f_ffree', 'f_files', 'f_flag', 'f_frsize', 'f_namemax'
+        ))
 
     def symlink(self, target, source):
         return os.symlink(source, target)
@@ -95,11 +102,25 @@ class Loopback(LoggingMixIn, Operations):
             return os.write(fh, data)
 
 
-if __name__ == '__main__':
-    if len(argv) != 3:
-        print('usage: %s <root> <mountpoint>' % argv[0])
-        exit(1)
+@click.group()
+def main():
+    pass
 
+
+@main.command()
+def slave():
+    Slave().run()
+
+
+@main.command()
+@click.argument('root', help='directory to store filesystem data')
+@click.argument('mountpoint')
+@click.option('foreground', is_flag=True)
+@click.option('slaves', default=1,
+              help="number of slave threads to run (shouldn't be greater than "
+                   "count of topic partitions in kafka)")
+def master(root, mountpoint, foreground):
     logging.basicConfig(level=logging.DEBUG)
-
-    fuse = FUSE(Loopback(argv[1]), argv[2], foreground=True)
+    slave_thread = Thread(target=Slave().run)
+    slave_thread.start()
+    FUSE(Master(root), mountpoint, foreground=foreground)
