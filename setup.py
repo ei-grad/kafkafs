@@ -6,10 +6,10 @@ from setuptools import setup
 setup(
     name="KafkaFS",
     version="0.0.0",
-    py_modules=["kafkafs", "kafkafs_pb2"],
+    packages=['kafkafs'],
     entry_points={
         'console_scripts': [
-            'kafkafs = kafkafs:main',
+            'kafkafs = kafkafs.cli:main',
         ],
     },
     install_requires=[

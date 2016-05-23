@@ -1,128 +1,17 @@
-#!/usr/bin/env python
-from __future__ import print_function, absolute_import, division
-
-import logging
-
+from concurrent.futures import Future
 from errno import EACCES
 from os.path import realpath
-from threading import Thread, Lock
-from concurrent.futures import Future
+from threading import Lock
 from uuid import getnode, uuid1
-
 import os
 
-import click
+from fuse import FuseOSError, Operations, LoggingMixIn, ENOTSUP
 
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, ENOTSUP
 from pykafka import KafkaClient
 from pykafka.common import CompressionType
 
-from fuse_pb2 import FuseChange
-
-
-class Slave():
-
-    def __init__(self, root, broker, topic, futures=None, files=None):
-        self.root = realpath(root)
-        self.broker = broker
-        self.topic = topic
-        self.futures = futures
-        if files is None:
-            files = {}
-        self.files = files
-
-    def run(self):
-        topic = KafkaClient(hosts=self.broker).topics[self.topic]
-        consumer_group = '%s:%s' % (getnode(), self.root)
-        consumer = topic.get_balanced_consumer(
-            consumer_group,
-            managed=True,
-            use_rdkafka=True,
-        )
-        for msg in consumer:
-            print(msg)
-
-    def p(self, path):
-        return os.path.join(self.root, path)
-
-    def chmod(self, msg):
-        return os.chmod(self.p(msg.path), msg.mode)
-
-    def chown(self, msg):
-        return os.chown(self.p(msg.path), msg.uid, msg.gid)
-
-    def create(self, msg):
-        return os.open(self.p(msg.path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, msg.mode)
-
-    def flush(self, msg):
-        return os.fsync(self.files[msg.fh_uuid].fh)
-
-    def fsync(self, msg):
-        fh = self.files[msg.fh_uuid].fh
-        if msg.datasync:
-            return os.fdatasync(fh)
-        else:
-            return os.fsync(fh)
-
-    def link(self, msg):
-        return os.link(self.p(msg.src), self.p(msg.path))
-
-    def mkdir(self, msg):
-        return os.mkdir(self.p(msg.path), msg.mode)
-
-    def open(self, msg):
-        fh = os.open(self.p(msg.path), self.flags(msg.flags), msg.mode)
-        filehandle = FileHandle(
-            path=msg.path,
-            uuid=msg.uuid,
-            flags=msg.flags,
-            mode=msg.mode,
-            fh=fh,
-        )
-        self.files[msg.uuid] = filehandle
-        return filehandle
-
-    def symlink(self, msg):
-        return os.symlink(self.p(msg.src), self.p(msg.path))
-
-    def truncate(self, msg):
-        with open(self.p(msg.path), 'r+') as f:
-            return f.truncate(msg.length)
-
-    def unlink(self, msg):
-        return os.unlink(self.p(msg.path))
-
-    def write(self, msg):
-        filehandle = self.files[msg.fh_uuid]
-        with filehandle.lock:
-            os.lseek(filehandle.fh, msg.offset, 0)
-            # XXX: what if returned less than len(msg.data)??
-            return os.write(filehandle.fh, msg.data)
-
-
-class Sequence():
-
-    def __init__(self, start=0, delta=1):
-        self.lock = Lock()
-        self.value = start - delta
-        self.delta = delta
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        with self.lock:
-            self.value += self.delta
-            return self.value
-
-
-class FileHandle():
-    def __init__(self, path, uuid, flags, fh=None):
-        self.path = path
-        self.uuid = uuid
-        self.flags = flags
-        self.fh = fh
-        self.lock = Lock()
+from kafkafs.fuse_pb2 import FuseChange
+from kafkafs.utils import Sequence
 
 
 class Master(LoggingMixIn, Operations):
@@ -261,35 +150,3 @@ class Master(LoggingMixIn, Operations):
             offset=offset,
             fh_uuid=self.files[fh].uuid
         )
-
-
-@click.group()
-def main():
-    pass
-
-
-@main.command()
-def slave():
-    """Run KafkaFS slave"""
-    Slave().run()
-
-
-@main.command()
-@click.argument('root')
-@click.argument('mountpoint')
-@click.option('--broker')
-@click.option('--foreground', is_flag=True)
-@click.option('--slaves', default=1,
-              help="number of slave threads to run (shouldn't be greater than "
-                   "count of topic partitions in kafka)")
-def master(root, mountpoint, foreground, broker, slaves):
-    '''Mount a FUSE filesystem for KafkaFS master
-    '''
-
-    logging.basicConfig(level=logging.DEBUG)
-
-    for i in range(slaves):
-        slave_thread = Thread(target=Slave().run)
-        slave_thread.start()
-
-    FUSE(Master(root), mountpoint, foreground=foreground)
