@@ -22,11 +22,14 @@ from fuse_pb2 import FuseChange
 
 class Slave():
 
-    def __init__(self, root, broker, topic, futures=None):
+    def __init__(self, root, broker, topic, futures=None, files=None):
         self.root = realpath(root)
         self.broker = broker
         self.topic = topic
         self.futures = futures
+        if files is None:
+            files = {}
+        self.files = files
 
     def run(self):
         topic = KafkaClient(hosts=self.broker).topics[self.topic]
@@ -66,6 +69,35 @@ class Slave():
 
     def mkdir(self, msg):
         return os.mkdir(self.p(msg.path), msg.mode)
+
+    def open(self, msg):
+        fh = os.open(self.p(msg.path), self.flags(msg.flags), msg.mode)
+        filehandle = FileHandle(
+            path=msg.path,
+            uuid=msg.uuid,
+            flags=msg.flags,
+            mode=msg.mode,
+            fh=fh,
+        )
+        self.files[msg.uuid] = filehandle
+        return filehandle
+
+    def symlink(self, msg):
+        return os.symlink(self.p(msg.src), self.p(msg.path))
+
+    def truncate(self, msg):
+        with open(self.p(msg.path), 'r+') as f:
+            return f.truncate(msg.length)
+
+    def unlink(self, msg):
+        return os.unlink(self.p(msg.path))
+
+    def write(self, msg):
+        filehandle = self.files[msg.fh_uuid]
+        with filehandle.lock:
+            os.lseek(filehandle.fh, msg.offset, 0)
+            # XXX: what if returned less than len(msg.data)??
+            return os.write(filehandle.fh, msg.data)
 
 
 class Sequence():
@@ -162,11 +194,12 @@ class Master(LoggingMixIn, Operations):
     def mknod(self, *args):
         raise FuseOSError(ENOTSUP)
 
-    def open(self, path, flags):
+    def open(self, path, flags, mode):
         filehandle = self.from_slave(
             op=FuseChange.OPEN,
             path=path,
             flags=self._get_flags(flags),
+            mode=mode,
         )
         self.files[filehandle.fh] = filehandle
         return filehandle.fh
@@ -179,7 +212,8 @@ class Master(LoggingMixIn, Operations):
     def readdir(self, path, fh):
         return ['.', '..'] + os.listdir(self.p(path))
 
-    readlink = os.readlink
+    def readlink(self, path):
+        return os.readlink(self.p(path))
 
     def release(self, path, fh):
         del self.files[fh]
@@ -187,9 +221,13 @@ class Master(LoggingMixIn, Operations):
 
     def rename(self, old, new):
         # XXX: not idempotent! should be unlink/write[] ??
-        return os.rename(old, self.root + new)
+        raise FuseOSError(ENOTSUP)
 
-    rmdir = os.rmdir
+    def rmdir(self, path):
+        return self.from_slave(
+            op=FuseChange.RMDIR,
+            path=path,
+        )
 
     def statfs(self, path):
         stv = os.statvfs(path)
@@ -198,20 +236,31 @@ class Master(LoggingMixIn, Operations):
             'f_ffree', 'f_files', 'f_flag', 'f_frsize', 'f_namemax'
         ))
 
-    def symlink(self, target, source):
-        return os.symlink(source, target)
+    def symlink(self, path, src):
+        return self.from_slave(op=FuseChange.SYMLINK, path=path, src=src)
 
     def truncate(self, path, length, fh=None):
-        with open(path, 'r+') as f:
-            f.truncate(length)
+        return self.from_slave(op=FuseChange.TRUNCATE, path=path, length=length)
 
-    unlink = os.unlink
-    utimens = os.utime
+    def unlink(self, path):
+        return self.from_slave(op=FuseChange.UNLINK, path=path)
+
+    def utimens(self, path, times):
+        return self.from_slave(
+            op=FuseChange.UTIME,
+            path=path,
+            atime=times[0],
+            mtime=times[1],
+        )
 
     def write(self, path, data, offset, fh):
-        with self.rwlock:
-            os.lseek(fh, offset, 0)
-            return os.write(fh, data)
+        return self.from_slave(
+            op=FuseChange.WRITE,
+            path=path,
+            data=data,
+            offset=offset,
+            fh_uuid=self.files[fh].uuid
+        )
 
 
 @click.group()

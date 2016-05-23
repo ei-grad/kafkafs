@@ -70,4 +70,9 @@ message FuseChange {
 
   string src = 12;
 
+  uint32 length = 13;
+
+  uint64 atime = 14;
+  uint64 mtime = 15;
+
 }
