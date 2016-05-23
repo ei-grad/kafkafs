@@ -61,4 +61,13 @@ message FuseChange {
 
   repeated Flag flags = 7;
 
+  uint32 uid = 8;
+  uint32 gid = 9;
+
+  bytes fh_uuid = 10;
+
+  bool datasync = 11;
+
+  string src = 12;
+
 }

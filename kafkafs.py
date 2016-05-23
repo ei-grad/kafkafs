@@ -39,6 +39,34 @@ class Slave():
         for msg in consumer:
             print(msg)
 
+    def p(self, path):
+        return os.path.join(self.root, path)
+
+    def chmod(self, msg):
+        return os.chmod(self.p(msg.path), msg.mode)
+
+    def chown(self, msg):
+        return os.chown(self.p(msg.path), msg.uid, msg.gid)
+
+    def create(self, msg):
+        return os.open(self.p(msg.path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, msg.mode)
+
+    def flush(self, msg):
+        return os.fsync(self.files[msg.fh_uuid].fh)
+
+    def fsync(self, msg):
+        fh = self.files[msg.fh_uuid].fh
+        if msg.datasync:
+            return os.fdatasync(fh)
+        else:
+            return os.fsync(fh)
+
+    def link(self, msg):
+        return os.link(self.p(msg.src), self.p(msg.path))
+
+    def mkdir(self, msg):
+        return os.mkdir(self.p(msg.path), msg.mode)
+
 
 class Sequence():
 
@@ -56,6 +84,15 @@ class Sequence():
             return self.value
 
 
+class FileHandle():
+    def __init__(self, path, uuid, flags, fh=None):
+        self.path = path
+        self.uuid = uuid
+        self.flags = flags
+        self.fh = fh
+        self.lock = Lock()
+
+
 class Master(LoggingMixIn, Operations):
     def __init__(self, root, broker, topic):
         self.root = realpath(root)
@@ -63,83 +100,89 @@ class Master(LoggingMixIn, Operations):
             use_rdkafka=True, compression=CompressionType.SNAPPY
         )
         self._uuid_seq = Sequence()
-        self._node = getnode()
+        self.node = getnode()
 
-    def _send(self, kwargs):
-        if 'uuid' not in kwargs:
-            kwargs['uuid'] = self._get_uuid()
+        self.files = {}
+
+    def p(self, path):
+        return os.path.join(self.root, path)
+
+    def send(self, kwargs):
         return self.producer.produce(FuseChange(**kwargs).SerializeToString())
 
+    def from_slave(self, **kwargs):
+        if 'uuid' not in kwargs:
+            kwargs['uuid'] = self._get_uuid().bytes
+        future = Future()
+        self.futures[kwargs['uuid']] = future
+        self.send(**kwargs)
+        return future.result()
+
     def _get_uuid(self):
-        return uuid1(node=self._node, clock_seq=next(self._uuid_seq))
+        return uuid1(node=self.node, clock_seq=next(self._uuid_seq))
 
     def access(self, path, mode):
         if not os.access(self.root + path, mode):
             raise FuseOSError(EACCES)
 
     def chmod(self, path, mode):
-        self._send(FuseChange(
-            op=FuseChange.CHMOD
-        ))
-        return os.chmod(path, mode)
+        return self.from_slave(op=FuseChange.CHMOD, path=path, mode=mode)
 
     def chown(self, path, uid, gid):
-        return os.chown(path, uid, gid)
+        return self.from_slave(op=FuseChange.CHOWN, path=path, uid=uid, gid=gid)
 
     def create(self, path, mode):
-        return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        return self.from_slave(op=FuseChange.CREATE, path=path, mode=mode)
 
     def flush(self, path, fh):
-        return os.fsync(fh)
+        return self.from_slave(op=FuseChange.FLUSH, path=path,
+                               fh_uuid=self.files[fh].uuid)
 
     def fsync(self, path, datasync, fh):
-        if datasync != 0:
-            return os.fdatasync(fh)
-        else:
-            return os.fsync(fh)
+        return self.from_slave(
+            op=FuseChange.FSYNC,
+            path=path,
+            fh_uuid=self.files[fh].uuid,
+            datasync=(datasync != 0),
+        )
 
     def getattr(self, path, fh=None):
-        st = os.lstat(path)
+        st = os.lstat(self.root + path)
         return dict((key, getattr(st, key)) for key in (
             'st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime',
             'st_nlink', 'st_size', 'st_uid'
         ))
 
-    def link(self, target, source):
-        return os.link(source, target)
+    def link(self, path, src):
+        return self.from_slave(op=FuseChange.LINK, path=path, src=src)
 
     def mkdir(self, path, mode):
-        return os.mkdir(path, mode)
+        return self.from_slave(op=FuseChange.MKDIR, path=path, mode=mode)
 
     def mknod(self, *args):
         raise FuseOSError(ENOTSUP)
 
     def open(self, path, flags):
-        uuid = self._get_uuid().bytes
-        future = Future()
-        self.futures[uuid] = future
-        self._send(FuseChange(
-            uuid=uuid,
+        filehandle = self.from_slave(
             op=FuseChange.OPEN,
             path=path,
             flags=self._get_flags(flags),
-        ))
-        fh = future.result()
-        self.locks[fh] = Lock()
-        return fh
+        )
+        self.files[filehandle.fh] = filehandle
+        return filehandle.fh
 
     def read(self, path, size, offset, fh):
-        with self.locks[fh]:
+        with self.files[fh].lock:
             os.lseek(fh, offset, 0)
             return os.read(fh, size)
 
     def readdir(self, path, fh):
-        return ['.', '..'] + os.listdir(path)
+        return ['.', '..'] + os.listdir(self.p(path))
 
     readlink = os.readlink
 
     def release(self, path, fh):
-        del self.locks[fh]
+        del self.files[fh]
         return os.close(fh)
 
     def rename(self, old, new):
