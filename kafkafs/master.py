@@ -1,7 +1,6 @@
 from concurrent.futures import Future
 from errno import EACCES
 from os.path import realpath
-from threading import Lock
 from uuid import getnode, uuid1
 import os
 
