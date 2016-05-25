@@ -8,6 +8,9 @@ import click
 
 from fuse import FUSE
 
+from pykafka import KafkaClient
+from pykafka.common import CompressionType
+
 from kafkafs.slave import Slave
 from kafkafs.master import Master
 
@@ -34,6 +37,9 @@ opt_broker = click.option('--broker', default='localhost:9092')
 @opt_slaves
 def slave(root, topic, broker, slaves):
     """Run KafkaFS slave"""
+
+    topic = topic.encode('ascii')
+
     if slaves > 1:
         for i in range(slaves):
             slave_thread = Thread(target=Slave(root, broker, topic).run)
@@ -49,15 +55,29 @@ def slave(root, topic, broker, slaves):
 @opt_broker
 @opt_slaves
 @click.option('--foreground', is_flag=True)
-def master(root, topic, mountpoint, debug, foreground, broker, slaves):
-    '''Mount a FUSE filesystem for KafkaFS master
-    '''
+@click.option('--linger-ms', default=10)
+def master(root, topic, mountpoint, foreground, broker, slaves, linger_ms):
+    '''Mount a FUSE filesystem for KafkaFS master'''
+
+    futures = {}
+    files = {}
 
     for i in range(slaves):
-        slave_thread = Thread(target=Slave(root, broker, topic).run)
+        slave_thread = Thread(target=Slave(
+            root, broker, topic.encode('ascii'),
+            futures, files
+        ).run)
         slave_thread.start()
 
-    FUSE(Master(root, broker, topic), mountpoint, foreground=foreground)
+    kafka = KafkaClient(hosts=broker)
+    producer = kafka.topics[topic.encode('ascii')].get_producer(
+        use_rdkafka=True,
+        compression=CompressionType.SNAPPY,
+        linger_ms=linger_ms,
+    )
+    master = Master(root, producer, futures, files)
+    FUSE(master, mountpoint, foreground=foreground,
+         fsname='kafkafs://{}/{}'.format(broker, topic))
 
 
 if __name__ == "__main__":

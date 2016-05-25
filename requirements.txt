@@ -1,0 +1,9 @@
+click
+fusepy
+protobuf (>=3.0.0b3)
+pykafka
+python-snappy
+six
+
+ipython
+ipdb

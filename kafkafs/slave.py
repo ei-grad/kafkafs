@@ -1,11 +1,17 @@
 from os.path import realpath
 from uuid import getnode
+import logging
 import os
+
+import six
 
 from pykafka import KafkaClient
 
 from kafkafs.fuse_pb2 import FuseChange
 from kafkafs.utils import FileHandle
+
+
+logger = logging.getLogger(__name__)
 
 
 class Slave():
@@ -14,74 +20,89 @@ class Slave():
         self.root = realpath(root)
         self.broker = broker
         self.topic = topic
-        self.futures = futures
-        if files is None:
-            files = {}
-        self.files = files
+        self.futures = {} if futures is None else futures
+        self.files = {} if files is None else files
 
     def run(self):
-        topic = KafkaClient(hosts=self.broker).topics[self.topic]
-        consumer_group = '%s:%s' % (getnode(), self.root)
+        self.client = KafkaClient(hosts=self.broker)
+        topic = self.client.topics[self.topic]
+        consumer_group = six.b('%s:%s' % (getnode(), self.root))
         consumer = topic.get_balanced_consumer(
             consumer_group,
-            managed=True,
             use_rdkafka=True,
         )
-        for msg in consumer:
-            print(msg)
-            print(FuseChange)
+        logger.info("Started kafkafs slave on %s", self.root)
+        for kafka_msg in consumer:
+            msg = FuseChange.FromString(kafka_msg.value)
+            logger.debug("%s", msg)
+            ret = getattr(self, FuseChange.Operation.Name(msg.op))(msg)
+            if msg.uuid in self.futures:
+                self.futures[msg.uuid].set_result(ret)
 
     def p(self, path):
-        return os.path.join(self.root, path)
+        assert path[0] == '/'
+        ret = os.path.join(self.root, path[1:])
+        assert realpath(ret).startswith(self.root)
+        return ret
 
-    def chmod(self, msg):
+    def get_flags(self, flags):
+        ret = 0
+        for i in flags:
+            ret |= getattr(os, FuseChange.Flag.Name(i))
+        return ret
+
+    def CHMOD(self, msg):
         return os.chmod(self.p(msg.path), msg.mode)
 
-    def chown(self, msg):
+    def CHOWN(self, msg):
         return os.chown(self.p(msg.path), msg.uid, msg.gid)
 
-    def create(self, msg):
+    def CREATE(self, msg):
         return os.open(self.p(msg.path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, msg.mode)
 
-    def flush(self, msg):
+    def FLUSH(self, msg):
         return os.fsync(self.files[msg.fh_uuid].fh)
 
-    def fsync(self, msg):
+    def FSYNC(self, msg):
         fh = self.files[msg.fh_uuid].fh
         if msg.datasync:
             return os.fdatasync(fh)
         else:
             return os.fsync(fh)
 
-    def link(self, msg):
+    def LINK(self, msg):
         return os.link(self.p(msg.src), self.p(msg.path))
 
-    def mkdir(self, msg):
+    def MKDIR(self, msg):
         return os.mkdir(self.p(msg.path), msg.mode)
 
-    def open(self, msg):
-        fh = os.open(self.p(msg.path), self.flags(msg.flags), msg.mode)
+    def OPEN(self, msg):
+        fh = os.open(self.p(msg.path), self.get_flags(msg.flags), msg.mode)
         filehandle = FileHandle(
             path=msg.path,
             uuid=msg.uuid,
             flags=msg.flags,
-            mode=msg.mode,
             fh=fh,
         )
         self.files[msg.uuid] = filehandle
         return filehandle
 
-    def symlink(self, msg):
+    def RELEASE(self, msg):
+        fh = self.files[msg.fh_uuid].fh
+        del self.files[msg.fh_uuid]
+        return os.close(fh)
+
+    def SYMLINK(self, msg):
         return os.symlink(self.p(msg.src), self.p(msg.path))
 
-    def truncate(self, msg):
+    def TRUNCATE(self, msg):
         with open(self.p(msg.path), 'r+') as f:
             return f.truncate(msg.length)
 
-    def unlink(self, msg):
+    def UNLINK(self, msg):
         return os.unlink(self.p(msg.path))
 
-    def write(self, msg):
+    def WRITE(self, msg):
         filehandle = self.files[msg.fh_uuid]
         with filehandle.lock:
             os.lseek(filehandle.fh, msg.offset, 0)

@@ -6,40 +6,46 @@ import os
 
 from fuse import FuseOSError, Operations, LoggingMixIn, ENOTSUP
 
-from pykafka import KafkaClient
-from pykafka.common import CompressionType
-
 from kafkafs.fuse_pb2 import FuseChange
 from kafkafs.utils import Sequence
 
 
 class Master(LoggingMixIn, Operations):
-    def __init__(self, root, broker, topic):
+    def __init__(self, root, producer, futures, files):
         self.root = realpath(root)
-        self.producer = KafkaClient(hosts=broker).topics[topic].get_producer(
-            use_rdkafka=True, compression=CompressionType.SNAPPY
-        )
+        self.producer = producer
+        self.futures = futures
+        self.files = files
+
         self._uuid_seq = Sequence()
         self.node = getnode()
 
-        self.files = {}
-
     def p(self, path):
-        return os.path.join(self.root, path)
+        assert path[0] == '/'
+        ret = os.path.join(self.root, path[1:])
+        assert realpath(ret).startswith(self.root)
+        return ret
 
-    def send(self, kwargs):
+    def send(self, **kwargs):
         return self.producer.produce(FuseChange(**kwargs).SerializeToString())
 
     def from_slave(self, **kwargs):
         if 'uuid' not in kwargs:
-            kwargs['uuid'] = self._get_uuid().bytes
+            kwargs['uuid'] = self.get_uuid().bytes
         future = Future()
         self.futures[kwargs['uuid']] = future
         self.send(**kwargs)
         return future.result()
 
-    def _get_uuid(self):
+    def get_uuid(self):
         return uuid1(node=self.node, clock_seq=next(self._uuid_seq))
+
+    def get_flags(self, flags):
+        ret = []
+        for i in FuseChange.Flag.keys():
+            if flags & getattr(os, i):
+                ret.append(FuseChange.Flag.Value(i))
+        return ret
 
     def access(self, path, mode):
         if not os.access(self.root + path, mode):
@@ -82,11 +88,11 @@ class Master(LoggingMixIn, Operations):
     def mknod(self, *args):
         raise FuseOSError(ENOTSUP)
 
-    def open(self, path, flags, mode):
+    def open(self, path, flags, mode=None):
         filehandle = self.from_slave(
             op=FuseChange.OPEN,
             path=path,
-            flags=self._get_flags(flags),
+            flags=self.get_flags(flags),
             mode=mode,
         )
         self.files[filehandle.fh] = filehandle
@@ -104,8 +110,8 @@ class Master(LoggingMixIn, Operations):
         return os.readlink(self.p(path))
 
     def release(self, path, fh):
-        del self.files[fh]
-        return os.close(fh)
+        return self.from_slave(op=FuseChange.RELEASE, path=path,
+                               fh_uuid=self.files[fh].uuid)
 
     def rename(self, old, new):
         # XXX: not idempotent! should be unlink/write[] ??
