@@ -7,7 +7,7 @@ import os
 from fuse import FuseOSError, Operations, LoggingMixIn, ENOTSUP
 
 from kafkafs.fuse_pb2 import FuseChange
-from kafkafs.utils import Sequence
+from kafkafs.utils import Sequence, flags_os2pbf
 
 
 class Master(LoggingMixIn, Operations):
@@ -39,13 +39,6 @@ class Master(LoggingMixIn, Operations):
 
     def get_uuid(self):
         return uuid1(node=self.node, clock_seq=next(self._uuid_seq))
-
-    def get_flags(self, flags):
-        ret = []
-        for i in FuseChange.Flag.keys():
-            if flags & getattr(os, i):
-                ret.append(FuseChange.Flag.Value(i))
-        return ret
 
     def access(self, path, mode):
         if not os.access(self.root + path, mode):
@@ -92,7 +85,7 @@ class Master(LoggingMixIn, Operations):
         filehandle = self.from_slave(
             op=FuseChange.OPEN,
             path=path,
-            flags=self.get_flags(flags),
+            flags=flags_os2pbf(flags),
             mode=mode,
         )
         self.files[filehandle.fh] = filehandle

@@ -1,4 +1,7 @@
 from threading import Lock
+import os
+
+from kafkafs.fuse_pb2 import FuseChange
 
 
 class Sequence():
@@ -24,3 +27,18 @@ class FileHandle():
         self.flags = flags
         self.fh = fh
         self.lock = Lock()
+
+
+def flags_pbf2os(flags):
+    ret = 0
+    for i in flags:
+        ret |= getattr(os, FuseChange.Flag.Name(i))
+    return ret
+
+
+def flags_os2pbf(flags):
+    ret = []
+    for i in FuseChange.Flag.keys():
+        if flags & getattr(os, i):
+            ret.append(FuseChange.Flag.Value(i))
+    return ret

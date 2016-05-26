@@ -8,7 +8,7 @@ import six
 from pykafka import KafkaClient
 
 from kafkafs.fuse_pb2 import FuseChange
-from kafkafs.utils import FileHandle
+from kafkafs.utils import FileHandle, flags_os2pbf, flags_pbf2os
 
 
 logger = logging.getLogger(__name__)
@@ -45,12 +45,6 @@ class Slave():
         assert realpath(ret).startswith(self.root)
         return ret
 
-    def get_flags(self, flags):
-        ret = 0
-        for i in flags:
-            ret |= getattr(os, FuseChange.Flag.Name(i))
-        return ret
-
     def CHMOD(self, msg):
         return os.chmod(self.p(msg.path), msg.mode)
 
@@ -77,7 +71,7 @@ class Slave():
         return os.mkdir(self.p(msg.path), msg.mode)
 
     def OPEN(self, msg):
-        fh = os.open(self.p(msg.path), self.get_flags(msg.flags), msg.mode)
+        fh = os.open(self.p(msg.path), flags_pbf2os(msg.flags), msg.mode)
         filehandle = FileHandle(
             path=msg.path,
             uuid=msg.uuid,
