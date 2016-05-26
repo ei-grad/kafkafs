@@ -52,7 +52,16 @@ class Slave():
         return os.chown(self.p(msg.path), msg.uid, msg.gid)
 
     def CREATE(self, msg):
-        return os.open(self.p(msg.path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, msg.mode)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fh = os.open(self.p(msg.path), flags, msg.mode)
+        filehandle = FileHandle(
+            path=msg.path,
+            uuid=msg.uuid,
+            flags=flags_os2pbf(flags),
+            fh=fh,
+        )
+        self.files[msg.uuid] = filehandle
+        return filehandle
 
     def FLUSH(self, msg):
         return os.fsync(self.files[msg.fh_uuid].fh)
