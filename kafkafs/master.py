@@ -82,14 +82,13 @@ class Master(LoggingMixIn, Operations):
         raise FuseOSError(ENOTSUP)
 
     def open(self, path, flags, mode=None):
-        filehandle = self.from_slave(
+        # XXX: don't use from_slave for read? O_EXCL?
+        return self.from_slave(
             op=FuseChange.OPEN,
             path=path,
             flags=flags_os2pbf(flags),
             mode=mode,
         )
-        self.files[filehandle.fh] = filehandle
-        return filehandle.fh
 
     def read(self, path, size, offset, fh):
         with self.files[fh].lock:

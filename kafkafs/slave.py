@@ -61,7 +61,7 @@ class Slave():
             fh=fh,
         )
         self.files[msg.uuid] = filehandle
-        return filehandle
+        return fh
 
     def FLUSH(self, msg):
         return os.fsync(self.files[msg.fh_uuid].fh)
@@ -88,7 +88,7 @@ class Slave():
             fh=fh,
         )
         self.files[msg.uuid] = filehandle
-        return filehandle
+        return fh
 
     def RELEASE(self, msg):
         fh = self.files[msg.fh_uuid].fh
