@@ -105,6 +105,9 @@ class Slave():
     def UNLINK(self, msg):
         return os.unlink(self.p(msg.path))
 
+    def UTIME(self, msg):
+        return os.utime(self.p(msg.path), (msg.atime, msg.mtime))
+
     def WRITE(self, msg):
         filehandle = self.files[msg.fh_uuid]
         with filehandle.lock:
