@@ -96,7 +96,7 @@ class Slave():
         return os.close(fh)
 
     def SYMLINK(self, msg):
-        return os.symlink(self.p(msg.src), self.p(msg.path))
+        return os.symlink(msg.src, self.p(msg.path))
 
     def TRUNCATE(self, msg):
         with open(self.p(msg.path), 'r+') as f:
