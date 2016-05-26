@@ -3,7 +3,7 @@ kafkafs
 
 Distributed filesystem based on Kafka and FUSE.
 
-IT IS IN EARLY DEVELOPMENT STAGE! IT CAN IT YOUR KITTEN! USE IT WITH CAUTION,
+IT IS IN EARLY DEVELOPMENT STAGE! IT CAN EAT YOUR KITTEN! USE IT WITH CAUTION,
 RUN IT ONLY UNDER CHROOT OR VIRTUAL MACHINE!
 
 The idea is that all modern filesystem are journal-based, and kafka is a perfect
