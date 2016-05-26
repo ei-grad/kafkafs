@@ -97,7 +97,7 @@ class Master(LoggingMixIn, Operations):
             return os.read(fh, size)
 
     def readdir(self, path, fh):
-        return ['.', '..'] + os.listdir(self.p(path))
+        return ['.', '..'] + os.listdir(fh)
 
     def readlink(self, path):
         return os.readlink(self.p(path))
