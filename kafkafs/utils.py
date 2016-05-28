@@ -1,5 +1,8 @@
 from threading import Lock
+from functools import wraps
 import os
+
+from fuse import FuseOSError
 
 from kafkafs.fuse_pb2 import FuseChange
 
@@ -20,15 +23,6 @@ class Sequence():
             return self.value
 
 
-class FileHandle():
-    def __init__(self, path, uuid, flags, fh=None):
-        self.path = path
-        self.uuid = uuid
-        self.flags = flags
-        self.fh = fh
-        self.lock = Lock()
-
-
 def flags_pbf2os(flags):
     ret = 0
     for i in flags:
@@ -42,3 +36,13 @@ def flags_os2pbf(flags):
         if flags & getattr(os, i):
             ret.append(FuseChange.Flag.Value(i))
     return ret
+
+
+def exc2fuse(method):
+    @wraps(method)
+    def wrapper(*args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        except OSError as e:
+            raise FuseOSError(e.errno)
+    return wrapper

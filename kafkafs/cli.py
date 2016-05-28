@@ -13,6 +13,7 @@ from pykafka.common import CompressionType
 
 from kafkafs.slave import Slave
 from kafkafs.master import Master
+from kafkafs.filemanager import FileManager
 
 
 @click.group()
@@ -35,17 +36,35 @@ opt_broker = click.option('--broker', default='localhost:9092')
 @click.argument('topic')
 @opt_broker
 @opt_slaves
-def slave(root, topic, broker, slaves):
+@click.option('--fetch-wait-max-ms', default=10)
+def slave(root, topic, broker, slaves, fetch_wait_max_ms):
     """Run KafkaFS slave"""
 
     topic = topic.encode('ascii')
 
+    fm = FileManager(root)
+
+    def get_slave():
+        return Slave(
+            fm, broker, topic,
+            fetch_max_wait_ms=fetch_wait_max_ms
+        )
+
     if slaves > 1:
-        for i in range(slaves):
-            slave_thread = Thread(target=Slave(root, broker, topic).run)
-            slave_thread.start()
+
+        slaves = [
+            Thread(target=get_slave().run)
+            for i in range(slaves)
+        ]
+
+        for thread in slaves:
+            thread.start()
+
+        for thread in slaves:
+            thread.join()
+
     else:
-        Slave(root, broker, topic).run()
+        get_slave().run()
 
 
 @main.command()
@@ -60,12 +79,12 @@ def master(root, topic, mountpoint, foreground, broker, slaves, linger_ms):
     '''Mount a FUSE filesystem for KafkaFS master'''
 
     futures = {}
-    files = {}
+    fm = FileManager(root)
 
     for i in range(slaves):
         slave_thread = Thread(target=Slave(
-            root, broker, topic.encode('ascii'),
-            futures, files
+            fm, broker, topic.encode('ascii'),
+            futures, fetch_max_wait_ms=linger_ms,
         ).run)
         slave_thread.start()
 
@@ -75,7 +94,7 @@ def master(root, topic, mountpoint, foreground, broker, slaves, linger_ms):
         compression=CompressionType.SNAPPY,
         linger_ms=linger_ms,
     )
-    master = Master(root, producer, futures, files)
+    master = Master(fm, producer, futures)
     FUSE(master, mountpoint, foreground=foreground,
          fsname='kafkafs://{}/{}'.format(broker, topic))
 

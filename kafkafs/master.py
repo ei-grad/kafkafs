@@ -1,47 +1,44 @@
 from concurrent.futures import Future
 from errno import EACCES
-from os.path import realpath
 from uuid import getnode, uuid1
 import os
 
 from fuse import FuseOSError, Operations, LoggingMixIn, ENOTSUP
 
 from kafkafs.fuse_pb2 import FuseChange
-from kafkafs.utils import Sequence, flags_os2pbf
+from kafkafs.utils import Sequence, flags_os2pbf, exc2fuse
 
 
 class Master(LoggingMixIn, Operations):
-    def __init__(self, root, producer, futures, files):
-        self.root = realpath(root)
+    def __init__(self, filemanager, producer, futures, max_bytes=900000):
+        self.fm = filemanager
         self.producer = producer
         self.futures = futures
-        self.files = files
+
+        self.max_bytes = max_bytes
 
         self._uuid_seq = Sequence()
         self.node = getnode()
 
     def p(self, path):
-        assert path[0] == '/'
-        ret = os.path.join(self.root, path[1:])
-        assert realpath(ret).startswith(self.root)
-        return ret
+        return self.fm.p(path)
 
     def send(self, **kwargs):
         return self.producer.produce(FuseChange(**kwargs).SerializeToString())
 
     def from_slave(self, **kwargs):
         if 'uuid' not in kwargs:
-            kwargs['uuid'] = self.get_uuid().bytes
+            kwargs['uuid'] = self.get_uuid()
         future = Future()
         self.futures[kwargs['uuid']] = future
         self.send(**kwargs)
         return future.result()
 
     def get_uuid(self):
-        return uuid1(node=self.node, clock_seq=next(self._uuid_seq))
+        return uuid1(node=self.node, clock_seq=next(self._uuid_seq)).bytes
 
     def access(self, path, mode):
-        if not os.access(self.root + path, mode):
+        if not os.access(self.fm.p(path), mode):
             raise FuseOSError(EACCES)
 
     def chmod(self, path, mode):
@@ -54,19 +51,22 @@ class Master(LoggingMixIn, Operations):
         return self.from_slave(op=FuseChange.CREATE, path=path, mode=mode)
 
     def flush(self, path, fh):
-        return self.from_slave(op=FuseChange.FLUSH, path=path,
-                               fh_uuid=self.files[fh].uuid)
+        if fh in self.fm:
+            return self.from_slave(op=FuseChange.FLUSH, path=path,
+                                   fh_uuid=self.fm[fh].uuid)
+        else:
+            return 1
 
     def fsync(self, path, datasync, fh):
         return self.from_slave(
             op=FuseChange.FSYNC,
             path=path,
-            fh_uuid=self.files[fh].uuid,
+            fh_uuid=self.fm[fh].uuid,
             datasync=(datasync != 0),
         )
 
     def getattr(self, path, fh=None):
-        st = os.lstat(self.root + path)
+        st = os.lstat(self.fm.p(path))
         return dict((key, getattr(st, key)) for key in (
             'st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime',
             'st_nlink', 'st_size', 'st_uid'
@@ -81,17 +81,20 @@ class Master(LoggingMixIn, Operations):
     def mknod(self, *args):
         raise FuseOSError(ENOTSUP)
 
-    def open(self, path, flags, mode=None):
-        # XXX: don't use from_slave for read? O_EXCL?
-        return self.from_slave(
-            op=FuseChange.OPEN,
-            path=path,
-            flags=flags_os2pbf(flags),
-            mode=mode,
-        )
+    @exc2fuse
+    def open(self, path, flags, mode=0):
+        if flags & (os.O_WRONLY | os.O_RDWR):
+            return self.from_slave(
+                op=FuseChange.OPEN,
+                path=path,
+                flags=flags_os2pbf(flags),
+                mode=mode,
+            )
+        else:
+            return self.fm.open(self.get_uuid(), path, flags, mode)
 
     def read(self, path, size, offset, fh):
-        with self.files[fh].lock:
+        with self.fm[fh].lock:
             os.lseek(fh, offset, 0)
             return os.read(fh, size)
 
@@ -102,8 +105,12 @@ class Master(LoggingMixIn, Operations):
         return os.readlink(self.p(path))
 
     def release(self, path, fh):
-        return self.from_slave(op=FuseChange.RELEASE, path=path,
-                               fh_uuid=self.files[fh].uuid)
+        if self.fm[fh].flags & (os.O_WRONLY | os.O_RDWR):
+            return self.from_slave(op=FuseChange.RELEASE, path=path,
+                                   fh_uuid=self.fm[fh].uuid)
+        else:
+            del self.fm[fh]
+            return os.close(fh)
 
     def rename(self, old, new):
         # XXX: not idempotent! should be unlink/write[] ??
@@ -123,10 +130,22 @@ class Master(LoggingMixIn, Operations):
         ))
 
     def symlink(self, path, src):
-        return self.from_slave(op=FuseChange.SYMLINK, path=path, src=src)
+        raise FuseOSError(ENOTSUP)
 
     def truncate(self, path, length, fh=None):
-        return self.from_slave(op=FuseChange.TRUNCATE, path=path, length=length)
+        if fh is not None:
+            return self.from_slave(
+                op=FuseChange.TRUNCATE,
+                fh_uuid=self.fm[fh].uuid,
+                path=path,
+                length=length,
+            )
+        else:
+            return self.from_slave(
+                op=FuseChange.TRUNCATE,
+                path=path,
+                length=length,
+            )
 
     def unlink(self, path):
         return self.from_slave(op=FuseChange.UNLINK, path=path)
@@ -143,7 +162,7 @@ class Master(LoggingMixIn, Operations):
         return self.from_slave(
             op=FuseChange.WRITE,
             path=path,
-            data=data,
+            data=data[:self.max_bytes],
             offset=offset,
-            fh_uuid=self.files[fh].uuid
+            fh_uuid=self.fm[fh].uuid
         )

@@ -1,4 +1,3 @@
-from os.path import realpath
 from uuid import getnode
 import logging
 import os
@@ -6,32 +5,37 @@ import os
 import six
 
 from pykafka import KafkaClient
+from pykafka.common import OffsetType
 
 from kafkafs.fuse_pb2 import FuseChange
-from kafkafs.utils import FileHandle, flags_os2pbf, flags_pbf2os
 
 
 logger = logging.getLogger(__name__)
 
 
+CREATE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+
+
 class Slave():
 
-    def __init__(self, root, broker, topic, futures=None, files=None):
-        self.root = realpath(root)
+    def __init__(self, filemanager, broker, topic, futures=None,
+                 fetch_max_wait_ms=10):
+        self.fm = filemanager
         self.broker = broker
         self.topic = topic
         self.futures = {} if futures is None else futures
-        self.files = {} if files is None else files
+        self.fetch_max_wait_ms = fetch_max_wait_ms
 
     def run(self):
         self.client = KafkaClient(hosts=self.broker)
         topic = self.client.topics[self.topic]
-        consumer_group = six.b('%s:%s' % (getnode(), self.root))
-        consumer = topic.get_balanced_consumer(
+        consumer_group = six.b('%s:%s' % (getnode(), self.fm.root))
+        consumer = topic.get_simple_consumer(
             consumer_group,
             use_rdkafka=True,
+            auto_offset_reset=OffsetType.LATEST,
         )
-        logger.info("Started kafkafs slave on %s", self.root)
+        logger.info("Started kafkafs slave on %s", self.fm.root)
         for kafka_msg in consumer:
             msg = FuseChange.FromString(kafka_msg.value)
             logger.debug("%s", msg)
@@ -40,10 +44,7 @@ class Slave():
                 self.futures[msg.uuid].set_result(ret)
 
     def p(self, path):
-        assert path[0] == '/'
-        ret = os.path.join(self.root, path[1:])
-        assert realpath(ret).startswith(self.root)
-        return ret
+        return self.fm.p(path)
 
     def CHMOD(self, msg):
         return os.chmod(self.p(msg.path), msg.mode)
@@ -52,22 +53,13 @@ class Slave():
         return os.chown(self.p(msg.path), msg.uid, msg.gid)
 
     def CREATE(self, msg):
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-        fh = os.open(self.p(msg.path), flags, msg.mode)
-        filehandle = FileHandle(
-            path=msg.path,
-            uuid=msg.uuid,
-            flags=flags_os2pbf(flags),
-            fh=fh,
-        )
-        self.files[msg.uuid] = filehandle
-        return fh
+        return self.fm.open(msg.uuid, msg.path, CREATE_FLAGS, msg.mode)
 
     def FLUSH(self, msg):
-        return os.fsync(self.files[msg.fh_uuid].fh)
+        return os.fsync(self.fm[msg.fh_uuid].fh)
 
     def FSYNC(self, msg):
-        fh = self.files[msg.fh_uuid].fh
+        fh = self.fm[msg.fh_uuid].fh
         if msg.datasync:
             return os.fdatasync(fh)
         else:
@@ -80,20 +72,15 @@ class Slave():
         return os.mkdir(self.p(msg.path), msg.mode)
 
     def OPEN(self, msg):
-        fh = os.open(self.p(msg.path), flags_pbf2os(msg.flags), msg.mode)
-        filehandle = FileHandle(
-            path=msg.path,
-            uuid=msg.uuid,
-            flags=msg.flags,
-            fh=fh,
-        )
-        self.files[msg.uuid] = filehandle
-        return fh
+        return self.fm.open(msg.uuid, msg.path, msg.flags, msg.mode)
 
     def RELEASE(self, msg):
-        fh = self.files[msg.fh_uuid].fh
-        del self.files[msg.fh_uuid]
+        fh = self.fm[msg.fh_uuid].fh
+        del self.fm[msg.fh_uuid]
         return os.close(fh)
+
+    def RMDIR(self, msg):
+        return os.rmdir(self.p(msg.path))
 
     def SYMLINK(self, msg):
         return os.symlink(msg.src, self.p(msg.path))
@@ -109,7 +96,7 @@ class Slave():
         return os.utime(self.p(msg.path), (msg.atime, msg.mtime))
 
     def WRITE(self, msg):
-        filehandle = self.files[msg.fh_uuid]
+        filehandle = self.fm[msg.fh_uuid]
         with filehandle.lock:
             os.lseek(filehandle.fh, msg.offset, 0)
             # XXX: what if returned less than len(msg.data)??
