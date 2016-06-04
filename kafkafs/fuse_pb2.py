@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   name='fuse.proto',
   package='',
   syntax='proto3',
-  serialized_pb=_b('\n\nfuse.proto\"\xf9\x05\n\nFuseChange\x12\x0c\n\x04uuid\x18\x01 \x01(\x0c\x12!\n\x02op\x18\x02 \x01(\x0e\x32\x15.FuseChange.Operation\x12\x0c\n\x04path\x18\x03 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x04 \x01(\x0c\x12\x0e\n\x06offset\x18\x05 \x01(\x04\x12\x0c\n\x04mode\x18\x06 \x01(\r\x12\x1f\n\x05\x66lags\x18\x07 \x03(\x0e\x32\x10.FuseChange.Flag\x12\x0b\n\x03uid\x18\x08 \x01(\r\x12\x0b\n\x03gid\x18\t \x01(\r\x12\x0f\n\x07\x66h_uuid\x18\n \x01(\x0c\x12\x10\n\x08\x64\x61tasync\x18\x0b \x01(\x08\x12\x0b\n\x03src\x18\x0c \x01(\t\x12\x0e\n\x06length\x18\r \x01(\r\x12\r\n\x05\x61time\x18\x0e \x01(\x02\x12\r\n\x05mtime\x18\x0f \x01(\x02\"\xb7\x01\n\tOperation\x12\t\n\x05\x43HMOD\x10\x00\x12\t\n\x05\x43HOWN\x10\x01\x12\n\n\x06\x43REATE\x10\x03\x12\t\n\x05\x46LUSH\x10\x04\x12\t\n\x05\x46SYNC\x10\x05\x12\x08\n\x04LINK\x10\x06\x12\t\n\x05MKDIR\x10\x07\x12\x08\n\x04OPEN\x10\x08\x12\x0b\n\x07RELEASE\x10\t\x12\t\n\x05RMDIR\x10\n\x12\x0b\n\x07SYMLINK\x10\x0b\x12\x0c\n\x08TRUNCATE\x10\x0c\x12\n\n\x06UNLINK\x10\r\x12\t\n\x05UTIME\x10\x0e\x12\t\n\x05WRITE\x10\x0f\"\xac\x02\n\x04\x46lag\x12\x0c\n\x08O_RDONLY\x10\x00\x12\x0c\n\x08O_WRONLY\x10\x01\x12\n\n\x06O_RDWR\x10\x02\x12\x0c\n\x08O_APPEND\x10\x03\x12\x0b\n\x07O_ASYNC\x10\x04\x12\r\n\tO_CLOEXEC\x10\x05\x12\x0b\n\x07O_CREAT\x10\x06\x12\x0c\n\x08O_DIRECT\x10\x07\x12\x0f\n\x0bO_DIRECTORY\x10\x08\x12\x0b\n\x07O_DSYNC\x10\t\x12\n\n\x06O_EXCL\x10\n\x12\x0f\n\x0bO_LARGEFILE\x10\x0b\x12\r\n\tO_NOATIME\x10\x0c\x12\x0c\n\x08O_NOCTTY\x10\r\x12\x0e\n\nO_NOFOLLOW\x10\x0e\x12\x0e\n\nO_NONBLOCK\x10\x0f\x12\n\n\x06O_PATH\x10\x10\x12\x0b\n\x07O_RSYNC\x10\x11\x12\n\n\x06O_SYNC\x10\x12\x12\r\n\tO_TMPFILE\x10\x13\x12\x0b\n\x07O_TRUNC\x10\x14\x62\x06proto3')
+  serialized_pb=_b('\n\nfuse.proto\"\xee\x05\n\nFuseChange\x12\x0c\n\x04uuid\x18\x01 \x01(\x0c\x12!\n\x02op\x18\x02 \x01(\x0e\x32\x15.FuseChange.Operation\x12\x0c\n\x04path\x18\x03 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x04 \x01(\x0c\x12\x0e\n\x06offset\x18\x05 \x01(\x04\x12\x0c\n\x04mode\x18\x06 \x01(\r\x12\x1f\n\x05\x66lags\x18\x07 \x03(\x0e\x32\x10.FuseChange.Flag\x12\x0b\n\x03uid\x18\x08 \x01(\r\x12\x0b\n\x03gid\x18\t \x01(\r\x12\x0f\n\x07\x66h_uuid\x18\n \x01(\x0c\x12\x10\n\x08\x64\x61tasync\x18\x0b \x01(\x08\x12\x0b\n\x03src\x18\x0c \x01(\t\x12\x0e\n\x06length\x18\r \x01(\r\x12\r\n\x05\x61time\x18\x0e \x01(\x02\x12\r\n\x05mtime\x18\x0f \x01(\x02\"\xac\x01\n\tOperation\x12\t\n\x05\x43HMOD\x10\x00\x12\t\n\x05\x43HOWN\x10\x01\x12\n\n\x06\x43REATE\x10\x03\x12\t\n\x05\x46SYNC\x10\x04\x12\x08\n\x04LINK\x10\x05\x12\t\n\x05MKDIR\x10\x06\x12\x08\n\x04OPEN\x10\x07\x12\x0b\n\x07RELEASE\x10\x08\x12\t\n\x05RMDIR\x10\t\x12\x0b\n\x07SYMLINK\x10\n\x12\x0c\n\x08TRUNCATE\x10\x0b\x12\n\n\x06UNLINK\x10\x0c\x12\t\n\x05UTIME\x10\r\x12\t\n\x05WRITE\x10\x0e\"\xac\x02\n\x04\x46lag\x12\x0c\n\x08O_RDONLY\x10\x00\x12\x0c\n\x08O_WRONLY\x10\x01\x12\n\n\x06O_RDWR\x10\x02\x12\x0c\n\x08O_APPEND\x10\x03\x12\x0b\n\x07O_ASYNC\x10\x04\x12\r\n\tO_CLOEXEC\x10\x05\x12\x0b\n\x07O_CREAT\x10\x06\x12\x0c\n\x08O_DIRECT\x10\x07\x12\x0f\n\x0bO_DIRECTORY\x10\x08\x12\x0b\n\x07O_DSYNC\x10\t\x12\n\n\x06O_EXCL\x10\n\x12\x0f\n\x0bO_LARGEFILE\x10\x0b\x12\r\n\tO_NOATIME\x10\x0c\x12\x0c\n\x08O_NOCTTY\x10\r\x12\x0e\n\nO_NOFOLLOW\x10\x0e\x12\x0e\n\nO_NONBLOCK\x10\x0f\x12\n\n\x06O_PATH\x10\x10\x12\x0b\n\x07O_RSYNC\x10\x11\x12\n\n\x06O_SYNC\x10\x12\x12\r\n\tO_TMPFILE\x10\x13\x12\x0b\n\x07O_TRUNC\x10\x14\x62\x06proto3')
 )
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
@@ -44,58 +44,54 @@ _FUSECHANGE_OPERATION = _descriptor.EnumDescriptor(
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='FLUSH', index=3, number=4,
+      name='FSYNC', index=3, number=4,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='FSYNC', index=4, number=5,
+      name='LINK', index=4, number=5,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='LINK', index=5, number=6,
+      name='MKDIR', index=5, number=6,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='MKDIR', index=6, number=7,
+      name='OPEN', index=6, number=7,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='OPEN', index=7, number=8,
+      name='RELEASE', index=7, number=8,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='RELEASE', index=8, number=9,
+      name='RMDIR', index=8, number=9,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='RMDIR', index=9, number=10,
+      name='SYMLINK', index=9, number=10,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='SYMLINK', index=10, number=11,
+      name='TRUNCATE', index=10, number=11,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='TRUNCATE', index=11, number=12,
+      name='UNLINK', index=11, number=12,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='UNLINK', index=12, number=13,
+      name='UTIME', index=12, number=13,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='UTIME', index=13, number=14,
-      options=None,
-      type=None),
-    _descriptor.EnumValueDescriptor(
-      name='WRITE', index=14, number=15,
+      name='WRITE', index=13, number=14,
       options=None,
       type=None),
   ],
   containing_type=None,
   options=None,
   serialized_start=290,
-  serialized_end=473,
+  serialized_end=462,
 )
 _sym_db.RegisterEnumDescriptor(_FUSECHANGE_OPERATION)
 
@@ -192,8 +188,8 @@ _FUSECHANGE_FLAG = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=476,
-  serialized_end=776,
+  serialized_start=465,
+  serialized_end=765,
 )
 _sym_db.RegisterEnumDescriptor(_FUSECHANGE_FLAG)
 
@@ -325,7 +321,7 @@ _FUSECHANGE = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=15,
-  serialized_end=776,
+  serialized_end=765,
 )
 
 _FUSECHANGE.fields_by_name['op'].enum_type = _FUSECHANGE_OPERATION

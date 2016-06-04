@@ -75,7 +75,9 @@ def slave(root, topic, broker, slaves, fetch_wait_max_ms):
 @opt_slaves
 @click.option('--foreground', is_flag=True)
 @click.option('--linger-ms', default=10)
-def master(root, topic, mountpoint, foreground, broker, slaves, linger_ms):
+@click.option('--max-write', default=900000)
+def master(root, topic, mountpoint, foreground, broker, slaves,
+           linger_ms, max_write):
     '''Mount a FUSE filesystem for KafkaFS master'''
 
     futures = {}
@@ -94,8 +96,10 @@ def master(root, topic, mountpoint, foreground, broker, slaves, linger_ms):
         compression=CompressionType.SNAPPY,
         linger_ms=linger_ms,
     )
-    master = Master(fm, producer, futures)
+    master = Master(fm, producer, futures, max_bytes=max_write)
+
     FUSE(master, mountpoint, foreground=foreground,
+         big_writes=True, max_write=max_write,
          fsname='kafkafs://{}/{}'.format(broker, topic))
 
 

@@ -6,7 +6,7 @@ import os
 from fuse import FuseOSError, Operations, LoggingMixIn, ENOTSUP
 
 from kafkafs.fuse_pb2 import FuseChange
-from kafkafs.utils import Sequence, flags_os2pbf, exc2fuse
+from kafkafs.utils import Sequence, flags_os2pbf, oserror2fuse
 
 
 class Master(LoggingMixIn, Operations):
@@ -24,6 +24,8 @@ class Master(LoggingMixIn, Operations):
         return self.fm.p(path)
 
     def send(self, **kwargs):
+        if 'uuid' not in kwargs:
+            kwargs['uuid'] = self.get_uuid()
         return self.producer.produce(FuseChange(**kwargs).SerializeToString())
 
     def from_slave(self, **kwargs):
@@ -50,13 +52,6 @@ class Master(LoggingMixIn, Operations):
     def create(self, path, mode):
         return self.from_slave(op=FuseChange.CREATE, path=path, mode=mode)
 
-    def flush(self, path, fh):
-        if fh in self.fm:
-            return self.from_slave(op=FuseChange.FLUSH, path=path,
-                                   fh_uuid=self.fm[fh].uuid)
-        else:
-            return 1
-
     def fsync(self, path, datasync, fh):
         return self.from_slave(
             op=FuseChange.FSYNC,
@@ -81,7 +76,7 @@ class Master(LoggingMixIn, Operations):
     def mknod(self, *args):
         raise FuseOSError(ENOTSUP)
 
-    @exc2fuse
+    @oserror2fuse
     def open(self, path, flags, mode=0):
         if flags & (os.O_WRONLY | os.O_RDWR):
             return self.from_slave(
@@ -130,7 +125,7 @@ class Master(LoggingMixIn, Operations):
         ))
 
     def symlink(self, path, src):
-        raise FuseOSError(ENOTSUP)
+        return self.from_slave(op=FuseChange.SYMLINK, path=path, src=src)
 
     def truncate(self, path, length, fh=None):
         if fh is not None:
@@ -159,10 +154,15 @@ class Master(LoggingMixIn, Operations):
         )
 
     def write(self, path, data, offset, fh):
-        return self.from_slave(
+        assert len(data) <= self.max_bytes
+        f = self.fm[fh]
+        self.send(
             op=FuseChange.WRITE,
             path=path,
-            data=data[:self.max_bytes],
+            data=data,
             offset=offset,
-            fh_uuid=self.fm[fh].uuid
+            fh_uuid=f.uuid,
+            flags=f.flags,
+            mode=f.mode,
         )
+        return len(data)

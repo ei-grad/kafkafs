@@ -38,7 +38,7 @@ def flags_os2pbf(flags):
     return ret
 
 
-def exc2fuse(method):
+def oserror2fuse(method):
     @wraps(method)
     def wrapper(*args, **kwargs):
         try:

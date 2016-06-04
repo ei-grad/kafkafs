@@ -1,11 +1,11 @@
-from uuid import getnode
+from uuid import UUID, getnode
 import logging
 import os
+import errno
 
 import six
 
 from pykafka import KafkaClient
-from pykafka.common import OffsetType
 
 from kafkafs.fuse_pb2 import FuseChange
 
@@ -17,6 +17,12 @@ CREATE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
 
 
 class Slave():
+
+    # operations which don't do fsync should not be committed
+    COMMIT_IGNORE_OPS = [
+        FuseChange.OPEN,
+        FuseChange.WRITE,
+    ]
 
     def __init__(self, filemanager, broker, topic, futures=None,
                  fetch_max_wait_ms=10):
@@ -33,13 +39,30 @@ class Slave():
         consumer = topic.get_simple_consumer(
             consumer_group,
             use_rdkafka=True,
-            auto_offset_reset=OffsetType.LATEST,
         )
+
         logger.info("Started kafkafs slave on %s", self.fm.root)
+
         for kafka_msg in consumer:
+
             msg = FuseChange.FromString(kafka_msg.value)
             logger.debug("%s", msg)
-            ret = getattr(self, FuseChange.Operation.Name(msg.op))(msg)
+
+            try:
+                ret = getattr(self, FuseChange.Operation.Name(msg.op))(msg)
+                if msg.op not in self.COMMIT_IGNORE_OPS:
+                    consumer.commit_offsets()
+            except KeyError:
+                continue
+            except OSError as e:
+                logging.error("Can't perform %s(%s)",
+                              FuseChange.Operation.Name(msg.op),
+                              UUID(bytes=msg.uuid),
+                              exc_info=True)
+                if msg.uuid in self.futures:
+                    self.futures[msg.uuid].set_exception(e)
+                raise
+
             if msg.uuid in self.futures:
                 self.futures[msg.uuid].set_result(ret)
 
@@ -55,10 +78,11 @@ class Slave():
     def CREATE(self, msg):
         return self.fm.open(msg.uuid, msg.path, CREATE_FLAGS, msg.mode)
 
-    def FLUSH(self, msg):
-        return os.fsync(self.fm[msg.fh_uuid].fh)
-
     def FSYNC(self, msg):
+        if msg.fh_uuid not in self.fm:
+            logger.error("FSYNC on not opened file %s:%s",
+                         UUID(bytes=msg.fh_uuid), msg.path)
+            raise OSError(errno.EBADF)
         fh = self.fm[msg.fh_uuid].fh
         if msg.datasync:
             return os.fdatasync(fh)
@@ -96,6 +120,14 @@ class Slave():
         return os.utime(self.p(msg.path), (msg.atime, msg.mtime))
 
     def WRITE(self, msg):
+        if msg.fh_uuid not in self.fm:
+            # XXX: need to be rewinded to offset, where file was opened?
+            # or just ignore O_CREATE would be enought?
+            flags = list(msg.flags)
+            flags.remove(FuseChange.O_CREAT)
+            flags.remove(FuseChange.O_APPEND)
+            flags.remove(FuseChange.O_TRUNC)
+            self.fm.open(msg.uuid, msg.path, msg.flags, msg.mode)
         filehandle = self.fm[msg.fh_uuid]
         with filehandle.lock:
             os.lseek(filehandle.fh, msg.offset, 0)

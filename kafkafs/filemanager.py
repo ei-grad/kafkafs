@@ -9,6 +9,7 @@ class FileManager():
 
     def __init__(self, root):
         self.lock = Lock()
+        self.write_futures = []
         self.root = realpath(root)
         self._by_uuid = {}
         self._by_fh = {}

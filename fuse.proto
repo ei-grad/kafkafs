@@ -8,18 +8,17 @@ message FuseChange {
     CHMOD = 0;
     CHOWN = 1;
     CREATE = 3;
-    FLUSH = 4;
-    FSYNC = 5;
-    LINK = 6;
-    MKDIR = 7;
-    OPEN = 8;
-    RELEASE = 9;
-    RMDIR = 10;
-    SYMLINK = 11;
-    TRUNCATE = 12;
-	UNLINK = 13;
-    UTIME = 14;
-	WRITE = 15;
+    FSYNC = 4;
+    LINK = 5;
+    MKDIR = 6;
+    OPEN = 7;
+    RELEASE = 8;
+    RMDIR = 9;
+    SYMLINK = 10;
+    TRUNCATE = 11;
+    UNLINK = 12;
+    UTIME = 13;
+    WRITE = 14;
   }
 
   Operation op = 2;
@@ -34,28 +33,28 @@ message FuseChange {
 
   enum Flag {
 
-	O_RDONLY 	= 0;
-	O_WRONLY	= 1;
-	O_RDWR		= 2;
+    O_RDONLY    = 0;
+    O_WRONLY    = 1;
+    O_RDWR      = 2;
 
-	O_APPEND	= 3;
-	O_ASYNC		= 4;
-	O_CLOEXEC	= 5;
-	O_CREAT		= 6;
-	O_DIRECT	= 7;
-	O_DIRECTORY = 8;
-	O_DSYNC		= 9;
-	O_EXCL		= 10;
-	O_LARGEFILE = 11;
-	O_NOATIME	= 12;
-	O_NOCTTY	= 13;
-	O_NOFOLLOW	= 14;
-	O_NONBLOCK	= 15;
-	O_PATH		= 16;
-	O_RSYNC		= 17;
-	O_SYNC		= 18;
-	O_TMPFILE	= 19;
-	O_TRUNC		= 20;
+    O_APPEND    = 3;
+    O_ASYNC     = 4;
+    O_CLOEXEC   = 5;
+    O_CREAT     = 6;
+    O_DIRECT    = 7;
+    O_DIRECTORY = 8;
+    O_DSYNC     = 9;
+    O_EXCL      = 10;
+    O_LARGEFILE = 11;
+    O_NOATIME   = 12;
+    O_NOCTTY    = 13;
+    O_NOFOLLOW  = 14;
+    O_NONBLOCK  = 15;
+    O_PATH      = 16;
+    O_RSYNC     = 17;
+    O_SYNC      = 18;
+    O_TMPFILE   = 19;
+    O_TRUNC     = 20;
 
   }
 
